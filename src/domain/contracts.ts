@@ -14,7 +14,21 @@
  * perfectly good name they typed into a build with no engine will edit the name forever.
  */
 export type NameConversionOutcome =
-  | { kind: "converted"; name: string; smiles: string; engine: EngineIdentity }
+  | {
+      kind: "converted";
+      name: string;
+      smiles: string;
+      engine: EngineIdentity;
+      /**
+       * How the structure got into the document, if it did.
+       *
+       * `proposed` — a patch is waiting in the host's review queue.
+       * `not-drawn` — the name converted but no 2D structure could be laid out, so there is a SMILES
+       *   and nothing to insert. Reported rather than treated as a failed conversion, because the
+       *   name *did* convert and the SMILES is still useful.
+       */
+      insertion: { kind: "proposed"; patchId?: string } | { kind: "not-drawn"; reason: string };
+    }
   | { kind: "not-parsed"; name: string; reason: string; engine: EngineIdentity }
   | { kind: "engine-unavailable"; name: string; reason: string }
   | { kind: "invalid-input"; name: string; reason: string };

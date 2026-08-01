@@ -4,12 +4,31 @@ import type { PluginCommandContext } from "@chemdraft/plugin-api";
 import { convertName } from "../application/convertName";
 import { MAX_NAME_LENGTH, validateName } from "../domain/contracts";
 
-/** A context carrying only what this plugin uses: the host's chemistry capability. */
-function contextWith(nameToStructure?: unknown): PluginCommandContext {
+/**
+ * A context carrying what this plugin uses: chemistry, and the document API it proposes through.
+ *
+ * `structureFromSmiles` defaults to a working stub so the conversion tests stay about conversion; the
+ * insertion tests override it.
+ */
+function contextWith(
+  nameToStructure?: unknown,
+  overrides: { structureFromSmiles?: unknown; proposePatch?: unknown; pages?: unknown[] } = {}
+): PluginCommandContext {
+  // `in` rather than `??`, so a test can express "this host does NOT have the method" by passing
+  // undefined explicitly — which is exactly the older-host case worth covering.
+  const structureFromSmiles = "structureFromSmiles" in overrides
+    ? overrides.structureFromSmiles
+    : async () => ({ available: true, built: true, object: { id: "mol_plugin_1", type: "molecule" } });
+  const pages = overrides.pages ?? [{ id: "page-1" }];
   return {
     plugin: { id: "org.test", name: "t", version: "0", permissions: [] },
-    documents: {} as never,
-    ...(nameToStructure === undefined ? {} : { chemistry: { nameToStructure } as never }),
+    documents: {
+      getActiveDocument: async () => ({ pages }),
+      proposePatch: overrides.proposePatch ?? (async () => ({ id: "patch-1", status: "pending" }))
+    },
+    ...(nameToStructure === undefined
+      ? {}
+      : { chemistry: { nameToStructure, structureFromSmiles } as never }),
     hasPermission: () => true,
     requirePermission: () => undefined
   } as unknown as PluginCommandContext;
@@ -48,7 +67,13 @@ describe("convertName", () => {
     const outcome = await convertName(contextWith(nameToStructure), "  benzene  ");
 
     expect(nameToStructure).toHaveBeenCalledWith({ name: "benzene" });
-    expect(outcome).toEqual({ kind: "converted", name: "benzene", smiles: "C1=CC=CC=C1", engine });
+    expect(outcome).toMatchObject({
+      kind: "converted",
+      name: "benzene",
+      smiles: "C1=CC=CC=C1",
+      engine,
+      insertion: { kind: "proposed", patchId: "patch-1" }
+    });
   });
 
   it("keeps 'the engine said no' apart from 'there is no engine'", async () => {
@@ -95,5 +120,56 @@ describe("convertName", () => {
     const outcome = await convertName(contextWith(nameToStructure), "   ");
     expect(outcome.kind).toBe("invalid-input");
     expect(nameToStructure).not.toHaveBeenCalled();
+  });
+});
+
+describe("insertion", () => {
+  const parses = async () => ({ available: true, parsed: true, smiles: "C1=CC=CC=C1", engine });
+
+  it("proposes the structure rather than writing it", async () => {
+    // The whole safety argument: OPSIN parses the name as written and cannot know what was meant, so
+    // a wrong-but-parseable name converts successfully. The review queue is what catches it.
+    const proposePatch = vi.fn(async (_proposal: unknown) => ({ id: "patch-9", status: "pending" }));
+    const outcome = await convertName(contextWith(parses, { proposePatch }), "benzene");
+
+    expect(outcome).toMatchObject({ insertion: { kind: "proposed", patchId: "patch-9" } });
+    const proposal = proposePatch.mock.calls[0]![0] as unknown as {
+      patch: { op: string; pageId: string };
+      requiresUserApproval?: boolean;
+    };
+    expect(proposal.patch.op).toBe("addObject");
+    expect(proposal.patch.pageId).toBe("page-1");
+    expect(proposal.requiresUserApproval).toBe(true);
+  });
+
+  it("still reports the SMILES when nothing could be drawn", async () => {
+    // A failed layout is not a failed conversion. The name DID convert, and the SMILES is useful even
+    // when the drawing step cannot produce anything — so this degrades rather than erroring.
+    const outcome = await convertName(
+      contextWith(parses, {
+        structureFromSmiles: async () => ({ available: true, built: false, reason: "no 2D structure" })
+      }),
+      "benzene"
+    );
+    expect(outcome).toMatchObject({
+      kind: "converted",
+      smiles: "C1=CC=CC=C1",
+      insertion: { kind: "not-drawn", reason: "no 2D structure" }
+    });
+  });
+
+  it("does not propose anything when there is no open page", async () => {
+    const proposePatch = vi.fn();
+    const outcome = await convertName(contextWith(parses, { proposePatch, pages: [] }), "benzene");
+    expect(outcome).toMatchObject({ insertion: { kind: "not-drawn" } });
+    expect(proposePatch).not.toHaveBeenCalled();
+  });
+
+  it("degrades when the host is too old to lay a structure out", async () => {
+    const outcome = await convertName(
+      contextWith(parses, { structureFromSmiles: undefined as never }),
+      "benzene"
+    );
+    expect(outcome).toMatchObject({ kind: "converted", insertion: { kind: "not-drawn" } });
   });
 });

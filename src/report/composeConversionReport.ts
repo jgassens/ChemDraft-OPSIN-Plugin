@@ -23,25 +23,36 @@ export function composeConversionReport(outcome: NameConversionOutcome): PluginP
             title: outcome.name,
             rows: [
               { label: "SMILES", value: outcome.smiles },
-              { label: "Parsed by", value: `${outcome.engine.id} ${outcome.engine.version}` }
+              { label: "Parsed by", value: `${outcome.engine.id} ${outcome.engine.version}` },
+              {
+                label: "Structure",
+                value:
+                  outcome.insertion.kind === "proposed"
+                    ? "Proposed for insertion — review it to accept or reject"
+                    : "Not drawn"
+              }
             ]
           },
           {
             kind: "text",
-            title: "Check this before you use it",
+            title: "Check it before you accept it",
             body:
               "OPSIN is a deterministic parser of systematic nomenclature: it applies the rules to the " +
               "name as written. It does not know what compound you meant, so a name that parses to a " +
-              "different structure than you intended parses silently and successfully."
+              "different structure than you intended parses silently and successfully. The review step " +
+              "is what stands between that and a wrong structure in your document."
           },
-          {
-            kind: "text",
-            title: "Not inserted into the document",
-            body:
-              "This release reports the SMILES for you to copy; it does not draw the structure. " +
-              "Placing it would need 2D coordinates, which the drawing application generates, not this " +
-              "plugin."
-          }
+          // Only when there is something to explain. A conversion that drew fine needs no paragraph
+          // about drawing.
+          ...(outcome.insertion.kind === "not-drawn"
+            ? [
+                {
+                  kind: "text" as const,
+                  title: "The name converted, but nothing was drawn",
+                  body: `${outcome.insertion.reason} The SMILES above is still correct and can be copied.`
+                }
+              ]
+            : [])
         ]
       };
 
