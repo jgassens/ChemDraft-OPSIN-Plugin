@@ -9,26 +9,34 @@ export const opsinPanelId = "panel.opsinNameToStructure.review";
 export const opsinNameToStructureAnalysisType = "name.to-structure";
 
 /**
- * `apiVersion` is `^0.1.2`, and the floor is deliberate.
+ * `apiVersion` is `^0.1.3`, and the floor is deliberate.
  *
  * `nameToStructure` arrived in 0.1.1 and `structureFromSmiles` — the 2D layout that makes insertion
- * possible — in 0.1.2. A 0.x caret locks the minor, so `^0.1.2` installs on 0.1.2+ and is correctly
- * REFUSED by anything older. That is the honest outcome: on a 0.1.0 host this plugin has no engine at
- * all, and on 0.1.1 it could convert but never draw. Declaring a lower floor would let it install and
- * then not do what its name promises.
+ * possible — in 0.1.2, and host-owned text prompts arrived in 0.1.3. A 0.x caret locks the minor, so
+ * `^0.1.3` installs on 0.1.3+ and is correctly REFUSED by anything older. Declaring a lower floor
+ * would let it install and then not do what its name promises.
  */
 export const opsinPluginManifest: PluginManifest = {
   id: opsinPluginId,
   name: "Name to Structure (OPSIN)",
-  version: "0.1.0",
-  apiVersion: "^0.1.2",
+  version: "0.2.0",
+  apiVersion: "^0.1.3",
   description:
     "Converts a systematic chemical name to a structure using OPSIN, a deterministic rule-based parser for IUPAC nomenclature, and proposes it for insertion — you review it before it lands. A name OPSIN cannot interpret is reported with the parser's own reason rather than guessed at: there is no fuzzy matching and no nearest-name search.",
   entry: "dist/plugin.js",
   // `document.proposePatch`, NOT `document.write`: this plugin queues a change for the user to accept
   // or reject and never writes the document itself. The narrower permission is the accurate one, and
   // the install prompt should say what the plugin actually does.
-  permissions: ["chemistry.compute", "document.proposePatch", "ui.menu", "ui.panel"],
+  permissions: [
+    "chemistry.compute",
+    // The host requires this before `nameToStructure` may start its bundled JVM.
+    "native.execute",
+    // The host requires this because `structureFromSmiles` lays out against the active document.
+    "document.read",
+    "document.proposePatch",
+    "ui.menu",
+    "ui.panel"
+  ],
   contributes: {
     commands: [
       {
@@ -37,7 +45,12 @@ export const opsinPluginManifest: PluginManifest = {
         category: "Edit",
         description:
           "Convert a systematic chemical name to a structure and propose it for insertion into the document.",
-        requiredPermissions: ["chemistry.compute", "document.proposePatch"],
+        requiredPermissions: [
+          "chemistry.compute",
+          "native.execute",
+          "document.read",
+          "document.proposePatch"
+        ],
         enabled: true
       }
     ],

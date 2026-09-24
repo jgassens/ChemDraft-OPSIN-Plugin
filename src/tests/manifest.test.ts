@@ -9,12 +9,12 @@ describe("the manifest", () => {
   });
 
   it("requires an API version that actually has the capabilities it depends on", () => {
-    // nameToStructure arrived in 0.1.1 and structureFromSmiles in 0.1.2. Declaring a lower floor
-    // would let this install on a host where it can convert but never draw — a plugin that installs
-    // and cannot do what its name promises is worse than one that refuses and says why.
-    expect(opsinPluginManifest.apiVersion).toBe("^0.1.2");
-    expect(isPluginApiVersionCompatible(opsinPluginManifest.apiVersion, "0.1.2")).toBe(true);
-    expect(isPluginApiVersionCompatible(opsinPluginManifest.apiVersion, "0.1.1")).toBe(false);
+    // promptText arrived in 0.1.3. A lower floor would let this install on a host where it cannot
+    // collect a name — a plugin that installs and cannot do what its name promises is worse than one
+    // that refuses and says why.
+    expect(opsinPluginManifest.apiVersion).toBe("^0.1.3");
+    expect(isPluginApiVersionCompatible(opsinPluginManifest.apiVersion, "0.1.3")).toBe(true);
+    expect(isPluginApiVersionCompatible(opsinPluginManifest.apiVersion, "0.1.2")).toBe(false);
     expect(isPluginApiVersionCompatible(opsinPluginManifest.apiVersion, "0.1.0")).toBe(false);
   });
 
@@ -25,6 +25,8 @@ describe("the manifest", () => {
     expect([...opsinPluginManifest.permissions].sort()).toEqual([
       "chemistry.compute",
       "document.proposePatch",
+      "document.read",
+      "native.execute",
       "ui.menu",
       "ui.panel"
     ]);

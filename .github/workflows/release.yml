@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - "**"
+    tags:
+      - "v*"
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run lint
+      - run: npm run package
+      - run: sha256sum --check dist/plugin-packages/opsin-name-to-structure-*.zip.sha256
+      - run: unzip -t dist/plugin-packages/opsin-name-to-structure-*.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: opsin-name-to-structure-package
+          path: dist/plugin-packages/opsin-name-to-structure-*.zip*
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: opsin-name-to-structure-package
+          path: dist/plugin-packages
+      - run: >-
+          gh release create "$GITHUB_REF_NAME"
+          dist/plugin-packages/opsin-name-to-structure-*.zip
+          dist/plugin-packages/opsin-name-to-structure-*.zip.sha256
+          --generate-notes
+          --title "Name to Structure (OPSIN) $GITHUB_REF_NAME"
+          --verify-tag
+          --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ github.token }}

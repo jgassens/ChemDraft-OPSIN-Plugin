@@ -36,12 +36,11 @@ Nothing downstream can catch that; only you can.
 
 ## Requirements
 
-A ChemDraft host compatible with plugin API **`^0.1.2`**. The floor is deliberate:
-`nameToStructure` arrived in 0.1.1 and `structureFromSmiles` — the layout that
-makes insertion possible — in 0.1.2. On a 0.1.0 host every conversion would
-decline; on 0.1.1 it could convert but never draw. A lower floor would let the
-plugin install and not do what its name promises, so instead it refuses to install
-and says why.
+A ChemDraft host compatible with plugin API **`^0.1.3`**. The floor is deliberate:
+`nameToStructure` arrived in 0.1.1, `structureFromSmiles` — the layout that makes
+insertion possible — in 0.1.2, and the host-owned text prompt used to enter a name
+arrived in 0.1.3. A lower floor would let the plugin install and not do what its
+name promises, so instead it refuses to install and says why.
 
 The OPSIN engine and its Java runtime are **bundled by the host**, not by this
 plugin. If a host build ships without the runtime, the panel says so and says
@@ -61,7 +60,9 @@ src/
   domain/contracts.ts             the outcome set, and the only input validation
   application/convertName.ts      asks the host, lays out, proposes, maps to an outcome
   report/composeConversionReport  outcome → declarative panel report
-  register.ts                     command handler for host.registerPlugin
+  register.ts                     command handler and host-owned text prompt
+  workerRegistration.ts           pure manifest/handler wiring for the worker
+  workerEntry.ts                  starts the plugin Web Worker runtime
 ```
 
 The four outcomes (`converted`, `not-parsed`, `engine-unavailable`,
@@ -73,11 +74,27 @@ edit that name forever.
 
 ## Permissions
 
-`chemistry.compute`, `document.proposePatch`, `ui.menu`, `ui.panel` — and nothing
-else. **`document.proposePatch`, not `document.write`:** the plugin queues a change
-you accept or reject and never writes the document itself, so the narrower
-permission is the accurate one. Asking for write access it does not use would
-overstate what it does in the install prompt.
+`chemistry.compute`, `native.execute`, `document.read`, `document.proposePatch`,
+`ui.menu`, and `ui.panel` — and nothing else.
+
+- The host requires `native.execute` as well as `chemistry.compute` before it can
+  start the bundled JVM that runs OPSIN. This is a host capability rule, not a
+  plugin-selected execution path.
+- The host requires `document.read` for `structureFromSmiles`, because it lays the
+  result out against the active document.
+- **`document.proposePatch`, not `document.write`:** the plugin queues a change you
+  accept or reject and never writes the document itself, so the narrower permission
+  is the accurate one.
+
+The command uses ChemDraft's host-owned text prompt while its own menu command is
+running. Cancelling is a silent no-op. If a host has no dialog UI, the plugin opens
+its panel with an explanation instead of failing.
+
+## Installation
+
+Run `npm run package`, then in ChemDraft choose **Add plugin from package…** and
+select `dist/plugin-packages/opsin-name-to-structure-0.2.0.zip`. ChemDraft runs the
+package's module worker; this plugin does not rely on browser DOM APIs.
 
 ## Development
 
