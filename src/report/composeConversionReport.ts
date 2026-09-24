@@ -19,36 +19,14 @@ export function composeConversionReport(outcome: NameConversionOutcome): PluginP
         title: "Name to Structure",
         sections: [
           {
-            kind: "keyValue",
-            title: outcome.name,
-            rows: [
-              { label: "SMILES", value: outcome.smiles },
-              { label: "Parsed by", value: `${outcome.engine.id} ${outcome.engine.version}` },
-              {
-                label: "Structure",
-                value:
-                  outcome.insertion.kind === "proposed"
-                    ? "Proposed for insertion — review it to accept or reject"
-                    : "Not drawn"
-              }
-            ]
-          },
-          {
             kind: "text",
-            title: "Check before accepting",
-            body: "OPSIN reads the name exactly as written. Check the structure before accepting."
+            title: "The name converted, but the structure was not inserted",
+            body:
+              outcome.insertion.kind === "not-drawn"
+                ? outcome.insertion.reason
+                : "The structure was inserted."
           },
-          // Only when there is something to explain. A conversion that drew fine needs no paragraph
-          // about drawing.
-          ...(outcome.insertion.kind === "not-drawn"
-            ? [
-                {
-                  kind: "text" as const,
-                  title: "The name converted, but nothing was drawn",
-                  body: `${outcome.insertion.reason} The SMILES above is still correct and can be copied.`
-                }
-              ]
-            : [])
+          { kind: "keyValue", title: outcome.name, rows: [{ label: "SMILES", value: outcome.smiles }] }
         ]
       };
 
@@ -64,15 +42,7 @@ export function composeConversionReport(outcome: NameConversionOutcome): PluginP
               { label: "Engine", value: `${outcome.engine.id} ${outcome.engine.version}` }
             ]
           },
-          { kind: "text", title: "Why", body: outcome.reason },
-          {
-            kind: "text",
-            title: "What this does not mean",
-            body:
-              "The parser did not recognise this name. That is not a statement that the compound does " +
-              "not exist, or that the name is wrong — OPSIN covers systematic nomenclature, and trade " +
-              "names, abbreviations, and many common names are outside it. No structure was guessed."
-          }
+          { kind: "text", title: "Why", body: outcome.reason }
         ]
       };
 
@@ -83,13 +53,7 @@ export function composeConversionReport(outcome: NameConversionOutcome): PluginP
           {
             kind: "text",
             title: "No name parser in this build",
-            body: outcome.reason
-          },
-          {
-            kind: "text",
-            title: "Your name was not the problem",
-            // Said explicitly because the alternative is a user editing a perfectly good name forever.
-            body: `"${outcome.name}" was never sent to a parser, so nothing has been determined about it.`
+            body: `${outcome.reason} "${outcome.name}" was never sent to a parser.`
           }
         ]
       };

@@ -5,14 +5,14 @@ import { convertName } from "../application/convertName";
 import { MAX_NAME_LENGTH, validateName } from "../domain/contracts";
 
 /**
- * A context carrying what this plugin uses: chemistry, and the document API it proposes through.
+ * A context carrying what this plugin uses: chemistry, and the document API it writes through.
  *
  * `structureFromSmiles` defaults to a working stub so the conversion tests stay about conversion; the
  * insertion tests override it.
  */
 function contextWith(
   nameToStructure?: unknown,
-  overrides: { structureFromSmiles?: unknown; proposePatch?: unknown; pages?: unknown[] } = {}
+  overrides: { structureFromSmiles?: unknown; applyPatch?: unknown; pages?: unknown[] } = {}
 ): PluginCommandContext {
   // `in` rather than `??`, so a test can express "this host does NOT have the method" by passing
   // undefined explicitly — which is exactly the older-host case worth covering.
@@ -24,7 +24,10 @@ function contextWith(
     plugin: { id: "org.test", name: "t", version: "0", permissions: [] },
     documents: {
       getActiveDocument: async () => ({ pages }),
-      proposePatch: overrides.proposePatch ?? (async () => ({ id: "patch-1", status: "pending" }))
+      proposePatch: async () => ({ id: "patch-1", status: "pending" }),
+      ...("applyPatch" in overrides
+        ? { applyPatch: overrides.applyPatch }
+        : { applyPatch: async () => ({ applied: true, objectIds: ["mol_plugin_1"] }) })
     },
     ...(nameToStructure === undefined
       ? {}
@@ -72,7 +75,7 @@ describe("convertName", () => {
       name: "benzene",
       smiles: "C1=CC=CC=C1",
       engine,
-      insertion: { kind: "proposed", patchId: "patch-1" }
+      insertion: { kind: "applied", objectIds: ["mol_plugin_1"] }
     });
   });
 
@@ -126,20 +129,16 @@ describe("convertName", () => {
 describe("insertion", () => {
   const parses = async () => ({ available: true, parsed: true, smiles: "C1=CC=CC=C1", engine });
 
-  it("proposes the structure rather than writing it", async () => {
-    // The whole safety argument: OPSIN parses the name as written and cannot know what was meant, so
-    // a wrong-but-parseable name converts successfully. The review queue is what catches it.
-    const proposePatch = vi.fn(async (_proposal: unknown) => ({ id: "patch-9", status: "pending" }));
-    const outcome = await convertName(contextWith(parses, { proposePatch }), "benzene");
+  it("writes the structure through applyPatch", async () => {
+    const applyPatch = vi.fn(async (_patch: unknown) => ({ applied: true as const, objectIds: ["mol_plugin_1"] }));
+    const outcome = await convertName(contextWith(parses, { applyPatch }), "benzene");
 
-    expect(outcome).toMatchObject({ insertion: { kind: "proposed", patchId: "patch-9" } });
-    const proposal = proposePatch.mock.calls[0]![0] as unknown as {
+    expect(outcome).toMatchObject({ insertion: { kind: "applied", objectIds: ["mol_plugin_1"] } });
+    const proposal = applyPatch.mock.calls[0]![0] as unknown as {
       patch: { op: string; pageId: string };
-      requiresUserApproval?: boolean;
     };
     expect(proposal.patch.op).toBe("addObject");
     expect(proposal.patch.pageId).toBe("page-1");
-    expect(proposal.requiresUserApproval).toBe(true);
   });
 
   it("still reports the SMILES when nothing could be drawn", async () => {
@@ -158,11 +157,11 @@ describe("insertion", () => {
     });
   });
 
-  it("does not propose anything when there is no open page", async () => {
-    const proposePatch = vi.fn();
-    const outcome = await convertName(contextWith(parses, { proposePatch, pages: [] }), "benzene");
+  it("does not write anything when there is no open page", async () => {
+    const applyPatch = vi.fn();
+    const outcome = await convertName(contextWith(parses, { applyPatch, pages: [] }), "benzene");
     expect(outcome).toMatchObject({ insertion: { kind: "not-drawn" } });
-    expect(proposePatch).not.toHaveBeenCalled();
+    expect(applyPatch).not.toHaveBeenCalled();
   });
 
   it("degrades when the host is too old to lay a structure out", async () => {
@@ -171,5 +170,13 @@ describe("insertion", () => {
       "benzene"
     );
     expect(outcome).toMatchObject({ kind: "converted", insertion: { kind: "not-drawn" } });
+  });
+
+  it("explains when applyPatch is unavailable", async () => {
+    const outcome = await convertName(contextWith(parses, { applyPatch: undefined }), "benzene");
+    expect(outcome).toMatchObject({
+      kind: "converted",
+      insertion: { kind: "not-drawn", reason: expect.stringContaining("plugin API 0.1.4") }
+    });
   });
 });

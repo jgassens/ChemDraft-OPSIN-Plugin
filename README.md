@@ -1,8 +1,8 @@
 # @chemdraft/plugin-opsin-name-to-structure
 
 Standalone repository for ChemDraft's **name → structure** plugin. Run
-**Edit → Structure from Name…**, type a systematic chemical name, and the
-structure is drawn and proposed for insertion — parsed by
+**Analyze → Structure from Name…**, type a systematic chemical name, and the
+structure is drawn, inserted, and selected — parsed by
 [OPSIN](https://github.com/dan2097/opsin), a deterministic rule-based parser of
 IUPAC nomenclature.
 
@@ -11,12 +11,13 @@ required.
 
 ## What it does, and what it does not
 
-**It proposes; it never writes.** The structure lands in the host's review queue
-and you accept or reject it. That is not ceremony — see below.
+**It inserts as one undoable action.** The host applies the structure while the
+command is running, selects the inserted object, and records one undo entry.
+Use Undo to remove it.
 
 **The 2D layout is the host's, not the plugin's.** A plugin inventing coordinates
 would produce unusable geometry, so the host lays the structure out (the same
-engine chain a pasted SMILES uses) and hands back an object to propose. If a host
+engine chain a pasted SMILES uses) and hands back an object to insert. If a host
 cannot draw it, you still get the SMILES: a failed layout is not a failed
 conversion.
 
@@ -29,22 +30,23 @@ act on.
 nomenclature. Trade names, abbreviations, and many common names are outside it,
 and "not interpreted" says nothing about whether the compound exists.
 
-**Check what comes back — this is why there is a review step.** OPSIN applies the
-rules to the name as written. It cannot know what you meant, so a name that parses
-to a structure other than the one you intended parses silently and *successfully*.
-Nothing downstream can catch that; only you can.
+OPSIN applies the rules to the name as written. Check the inserted structure if a
+name could have more than one intended meaning.
 
 ## Requirements
 
-A ChemDraft host compatible with plugin API **`^0.1.3`**. The floor is deliberate:
+A ChemDraft host compatible with plugin API **`^0.1.4`**. The floor is deliberate:
 `nameToStructure` arrived in 0.1.1, `structureFromSmiles` — the layout that makes
-insertion possible — in 0.1.2, and the host-owned text prompt used to enter a name
-arrived in 0.1.3. A lower floor would let the plugin install and not do what its
+insertion possible — in 0.1.2, the host-owned text prompt used to enter a name
+arrived in 0.1.3, and command-scoped `documents.applyPatch` arrived in 0.1.4. A
+lower floor would let the plugin install and not do what its
 name promises, so instead it refuses to install and says why.
 
 The OPSIN engine and its Java runtime are **bundled by the host**, not by this
-plugin. If a host build ships without the runtime, the panel says so and says
-plainly that your name was never sent anywhere.
+plugin. If a host build ships without the runtime, a short report says so and says
+plainly that your name was never sent anywhere. Other failures (an unparsable
+name, layout failure, or an unavailable insertion path) also open a short report.
+Cancelling the prompt does nothing.
 
 ## Architecture
 
@@ -58,7 +60,7 @@ cannot ship a second, worse name parser beside it.
 src/
   manifest.ts                     identity, commands, menus, panels, permissions
   domain/contracts.ts             the outcome set, and the only input validation
-  application/convertName.ts      asks the host, lays out, proposes, maps to an outcome
+  application/convertName.ts      asks the host, lays out, inserts, maps to an outcome
   report/composeConversionReport  outcome → declarative panel report
   register.ts                     command handler and host-owned text prompt
   workerRegistration.ts           pure manifest/handler wiring for the worker
@@ -74,17 +76,22 @@ edit that name forever.
 
 ## Permissions
 
-`chemistry.compute`, `native.execute`, `document.read`, `document.proposePatch`,
+`chemistry.compute`, `native.execute`, `document.read`, `document.write`,
 `ui.menu`, and `ui.panel` — and nothing else.
 
 - The host requires `native.execute` as well as `chemistry.compute` before it can
   start the bundled JVM that runs OPSIN. This is a host capability rule, not a
   plugin-selected execution path.
+- `chemistry.compute` lets the plugin ask the host to parse the name and lay out
+  the resulting structure; the plugin includes neither engine.
 - The host requires `document.read` for `structureFromSmiles`, because it lays the
   result out against the active document.
-- **`document.proposePatch`, not `document.write`:** the plugin queues a change you
-  accept or reject and never writes the document itself, so the narrower permission
-  is the accurate one.
+- **`document.write`:** used only through the host's command-scoped
+  `documents.applyPatch`. The host applies one patch as one undo entry, selects the
+  inserted object, and shows its status-bar message; the plugin has no unscoped
+  write path.
+- `ui.menu` provides **Analyze → Structure from Name…** and `ui.panel` provides
+  the short failure reports.
 
 The command uses ChemDraft's host-owned text prompt while its own menu command is
 running. Cancelling is a silent no-op. If a host has no dialog UI, the plugin opens
@@ -93,7 +100,7 @@ its panel with an explanation instead of failing.
 ## Installation
 
 Run `npm run package`, then in ChemDraft choose **Add plugin from package…** and
-select `dist/plugin-packages/opsin-name-to-structure-0.2.0.zip`. ChemDraft runs the
+select `dist/plugin-packages/opsin-name-to-structure-0.3.0.zip`. ChemDraft runs the
 package's module worker; this plugin does not rely on browser DOM APIs.
 
 ## Development

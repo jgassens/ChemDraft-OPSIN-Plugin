@@ -21,8 +21,8 @@ const dialogsUnavailable = Symbol("dialogs-unavailable");
  * Build the registration for `host.registerPlugin`.
  *
  * The host owns both the prompt and the 2D layout. The command asks through `dialogs.promptText`, then
- * `convertName` has the host turn OPSIN's SMILES into a document object and proposes it for insertion.
- * Keeping those jobs on the host preserves the worker boundary and gives the user a review step.
+ * `convertName` has the host turn OPSIN's SMILES into a document object and insert it as one undoable
+ * command action. Keeping those jobs on the host preserves the worker boundary.
  *
  * Cancelling the prompt is a first-class outcome, not an error: no panel is opened and nothing is
  * reported, because a user who changed their mind has not asked a question.
@@ -39,11 +39,17 @@ export function createOpsinRegistration(services: OpsinPluginServices = {}): Ops
     }
 
     const outcome = await convertName(context, typed);
-    await context.panels?.showReport(opsinPanelId, composeConversionReport(outcome));
+    if (!wasInserted(outcome)) {
+      await context.panels?.showReport(opsinPanelId, composeConversionReport(outcome));
+    }
     return outcome;
   };
 
   return { commandHandlers: { [opsinConvertCommandId]: convert } };
+}
+
+function wasInserted(outcome: Awaited<ReturnType<typeof convertName>>): boolean {
+  return outcome.kind === "converted" && outcome.insertion.kind === "applied";
 }
 
 /** Convenience for callers that only need the handlers. */

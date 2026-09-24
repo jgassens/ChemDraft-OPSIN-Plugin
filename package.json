@@ -1,6 +1,6 @@
 {
   "name": "@chemdraft/plugin-opsin-name-to-structure",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "license": "MIT",
   "description": "ChemDraft name-to-structure plugin \u2014 converts a systematic chemical name to a structure using the host's vendored OPSIN engine.",

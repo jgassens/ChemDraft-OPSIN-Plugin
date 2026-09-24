@@ -9,28 +9,30 @@ describe("the manifest", () => {
   });
 
   it("requires an API version that actually has the capabilities it depends on", () => {
-    // promptText arrived in 0.1.3. A lower floor would let this install on a host where it cannot
-    // collect a name — a plugin that installs and cannot do what its name promises is worse than one
-    // that refuses and says why.
-    expect(opsinPluginManifest.apiVersion).toBe("^0.1.3");
-    expect(isPluginApiVersionCompatible(opsinPluginManifest.apiVersion, "0.1.3")).toBe(true);
-    expect(isPluginApiVersionCompatible(opsinPluginManifest.apiVersion, "0.1.2")).toBe(false);
+    // applyPatch arrived in 0.1.4. A lower floor would let this install on a host where it cannot
+    // insert the result, so it must refuse instead.
+    expect(opsinPluginManifest.apiVersion).toBe("^0.1.4");
+    expect(isPluginApiVersionCompatible(opsinPluginManifest.apiVersion, "0.1.4")).toBe(true);
+    expect(isPluginApiVersionCompatible(opsinPluginManifest.apiVersion, "0.1.3")).toBe(false);
     expect(isPluginApiVersionCompatible(opsinPluginManifest.apiVersion, "0.1.0")).toBe(false);
   });
 
-  it("asks to propose changes, not to write them", () => {
-    // document.proposePatch, NOT document.write. The plugin queues a change the user accepts or
-    // rejects; asking for write access it never uses would overstate what it does in the install
-    // prompt, which is the same defect as a menu item that computes nothing.
+  it("asks to write one command-scoped patch", () => {
     expect([...opsinPluginManifest.permissions].sort()).toEqual([
       "chemistry.compute",
-      "document.proposePatch",
       "document.read",
+      "document.write",
       "native.execute",
       "ui.menu",
       "ui.panel"
     ]);
-    expect(opsinPluginManifest.permissions).not.toContain("document.write");
+    expect(opsinPluginManifest.permissions).not.toContain("document.proposePatch");
+    expect(opsinPluginManifest.contributes.commands?.[0]?.requiredPermissions).toEqual([
+      "chemistry.compute",
+      "native.execute",
+      "document.read",
+      "document.write"
+    ]);
   });
 
   it("wires the menu item to a command that exists", () => {

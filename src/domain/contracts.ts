@@ -22,12 +22,12 @@ export type NameConversionOutcome =
       /**
        * How the structure got into the document, if it did.
        *
-       * `proposed` — a patch is waiting in the host's review queue.
+       * `applied` — the host inserted and selected the object as one undoable command action.
        * `not-drawn` — the name converted but no 2D structure could be laid out, so there is a SMILES
        *   and nothing to insert. Reported rather than treated as a failed conversion, because the
        *   name *did* convert and the SMILES is still useful.
        */
-      insertion: { kind: "proposed"; patchId?: string } | { kind: "not-drawn"; reason: string };
+      insertion: { kind: "applied"; objectIds: string[] } | { kind: "not-drawn"; reason: string };
     }
   | { kind: "not-parsed"; name: string; reason: string; engine: EngineIdentity }
   | { kind: "engine-unavailable"; name: string; reason: string }

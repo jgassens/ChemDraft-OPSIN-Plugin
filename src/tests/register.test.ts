@@ -13,26 +13,66 @@ import { opsinWorkerRegistration } from "../workerRegistration";
 
 type PromptText = NonNullable<PluginHostOptions["promptText"]>;
 const submitBenzene: PromptText = async () => ({ status: "submitted", value: "benzene" });
+const builtMolecule = {
+  id: "mol_plugin_1",
+  type: "generic-atom-label" as const,
+  label: "C",
+  x: 0,
+  y: 0,
+  width: 10,
+  height: 10,
+  rotation: 0,
+  style: {},
+  querySemantics: "unknown" as const
+};
+type HostOverrides = {
+  promptText?: PromptText | undefined;
+  applyDocumentPatch?: NonNullable<PluginHostOptions["applyDocumentPatch"]> | undefined;
+  missingDocumentWrite?: boolean;
+};
 
 /** Register against the real host, so permission gating and panel routing are exercised, not mocked. */
 function hostWith(
   convertNameToStructure?: unknown,
-  options: { promptText?: PromptText } = { promptText: submitBenzene }
+  options: HostOverrides = { promptText: submitBenzene }
 ) {
   const showPanelReport = vi.fn();
-  const host = new PluginHost({
+  const applyDocumentPatch = vi.fn<NonNullable<PluginHostOptions["applyDocumentPatch"]>>(async () => ({
+    applied: true as const,
+    objectIds: ["mol_plugin_1"]
+  }));
+  const hostOptions = {
     showPanelReport,
+    getActiveDocument: async () => ({ pages: [{ id: "page-1" }] }) as never,
+    buildStructureFromSmiles: async () => ({ available: true as const, built: true as const, object: builtMolecule }),
+    applyDocumentPatch,
+    ...options,
     ...(convertNameToStructure === undefined ? {} : { convertNameToStructure: convertNameToStructure as never }),
-    ...(options.promptText === undefined ? {} : { promptText: options.promptText })
-  });
-  host.registerPlugin(opsinPluginManifest, createOpsinRegistration());
-  return { host, showPanelReport };
+  };
+  const host = new PluginHost(hostOptions as PluginHostOptions);
+  const manifest = options.missingDocumentWrite
+    ? {
+        ...opsinPluginManifest,
+        permissions: opsinPluginManifest.permissions.filter((permission) => permission !== "document.write"),
+        contributes: {
+          ...opsinPluginManifest.contributes,
+          commands: opsinPluginManifest.contributes.commands?.map((command) => ({
+            ...command,
+            requiredPermissions: command.requiredPermissions?.filter(
+              (permission) => permission !== "document.write"
+            )
+          }))
+        }
+      }
+    : opsinPluginManifest;
+  host.registerPlugin(manifest, createOpsinRegistration());
+  return { host, showPanelReport, applyDocumentPatch };
 }
 
 describe("the command, through the real host", () => {
-  it("converts and reports what the engine returned", async () => {
+  it("inserts one patch and opens no panel when conversion succeeds", async () => {
     const promptText = vi.fn<PromptText>(async () => ({ status: "submitted", value: "benzene" }));
-    const { host, showPanelReport } = hostWith(async () => ({
+    const { host, showPanelReport, applyDocumentPatch } = hostWith(async () => ({
       available: true,
       parsed: true,
       smiles: "C1=CC=CC=C1",
@@ -40,7 +80,11 @@ describe("the command, through the real host", () => {
     }), { promptText });
 
     const result = await host.invokeCommand(opsinConvertCommandId);
-    expect(result).toMatchObject({ kind: "converted", smiles: "C1=CC=CC=C1" });
+    expect(result).toMatchObject({
+      kind: "converted",
+      smiles: "C1=CC=CC=C1",
+      insertion: { kind: "applied", objectIds: ["mol_plugin_1"] }
+    });
     expect(promptText).toHaveBeenCalledWith(
       { id: opsinPluginId, name: "Name to Structure (OPSIN)" },
       {
@@ -52,28 +96,28 @@ describe("the command, through the real host", () => {
       expect.any(AbortSignal)
     );
 
-    const [, panelId, report] = showPanelReport.mock.calls[0]!;
-    expect(panelId).toBe(opsinPanelId);
-    expect(JSON.stringify(report)).toContain("C1=CC=CC=C1");
-    expect(JSON.stringify(report)).toContain(
-      "OPSIN reads the name exactly as written. Check the structure before accepting."
-    );
+    expect(applyDocumentPatch).toHaveBeenCalledTimes(1);
+    const [{ patch, undoLabel }] = applyDocumentPatch.mock.calls[0]!;
+    expect(patch.patch).toMatchObject({ op: "addObject", pageId: "page-1", object: builtMolecule });
+    expect(undoLabel).toBe("Name to Structure (OPSIN): Structure from Name…");
+    expect(showPanelReport).not.toHaveBeenCalled();
   });
 
   it("opens no panel at all when the user cancels the prompt", async () => {
     // Cancelling is not a failed conversion. Reporting one would put an error in front of someone who
     // simply changed their mind.
-    const { host, showPanelReport } = hostWith(
+    const { host, showPanelReport, applyDocumentPatch } = hostWith(
       async () => ({ available: true, parsed: true, smiles: "C", engine: { id: "opsin", version: "2.9.0" } }),
       { promptText: async () => ({ status: "cancelled" }) }
     );
     const result = await host.invokeCommand(opsinConvertCommandId);
     expect(result).toEqual({ cancelled: true });
     expect(showPanelReport).not.toHaveBeenCalled();
+    expect(applyDocumentPatch).not.toHaveBeenCalled();
   });
 
   it("tells the reader their name was never sent when the host has no engine", async () => {
-    const { host, showPanelReport } = hostWith(undefined);
+    const { host, showPanelReport, applyDocumentPatch } = hostWith(undefined);
     const result = await host.invokeCommand(opsinConvertCommandId);
     expect(result).toMatchObject({ kind: "engine-unavailable" });
 
@@ -81,6 +125,7 @@ describe("the command, through the real host", () => {
     expect(report).toContain("was never sent to a parser");
     // And it must not name an engine that never ran — that would be a false provenance claim.
     expect(report).not.toContain("opsin 2.9.0");
+    expect(applyDocumentPatch).not.toHaveBeenCalled();
   });
 
   it("reports a clear explanation when this host has no dialog UI", async () => {
@@ -96,7 +141,7 @@ describe("the command, through the real host", () => {
 
   it("reports a name the engine could not read, with the engine's own words", async () => {
     const reason = "xyzzy is unparsable due to the following being uninterpretable: xyzzy";
-    const { host, showPanelReport } = hostWith(async () => ({
+    const { host, showPanelReport, applyDocumentPatch } = hostWith(async () => ({
       available: true,
       parsed: false,
       reason,
@@ -108,8 +153,20 @@ describe("the command, through the real host", () => {
 
     const report = JSON.stringify(showPanelReport.mock.calls[0]![2]);
     expect(report).toContain(reason);
-    // A parser miss is not evidence the compound does not exist, and the panel says so.
-    expect(report).toContain("not a statement that the compound does not exist");
+    expect(applyDocumentPatch).not.toHaveBeenCalled();
+  });
+
+  it("reports when applyPatch is absent because document.write is unavailable", async () => {
+    const { host, showPanelReport, applyDocumentPatch } = hostWith(
+      async () => ({ available: true, parsed: true, smiles: "C", engine: { id: "opsin", version: "2.9.0" } }),
+      { promptText: submitBenzene, missingDocumentWrite: true }
+    );
+
+    const result = await host.invokeCommand(opsinConvertCommandId);
+    expect(result).toMatchObject({ kind: "converted", insertion: { kind: "not-drawn" } });
+    expect(JSON.stringify(showPanelReport.mock.calls[0]![2])).toContain("plugin API 0.1.4");
+    expect(JSON.stringify(showPanelReport.mock.calls[0]![2])).toContain("document.write permission");
+    expect(applyDocumentPatch).not.toHaveBeenCalled();
   });
 });
 

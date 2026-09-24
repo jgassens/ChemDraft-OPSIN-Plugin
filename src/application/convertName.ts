@@ -11,7 +11,7 @@ import { validateName, type NameConversionOutcome } from "../domain/contracts";
  * and a plugin cannot ship a second, worse name parser beside it.
  *
  * `nameToStructure` is optional on the API because a plugin may meet a host older than the method.
- * We declare `^0.1.1` so that should not happen, but the check stays: an install path that somehow
+ * We declare `^0.1.4` so that should not happen, but the check stays: an install path that somehow
  * bypassed the version gate should decline, not throw `undefined is not a function`.
  */
 export async function convertName(
@@ -45,23 +45,21 @@ export async function convertName(
     return { kind: "not-parsed", name, reason: result.reason, engine: result.engine };
   }
 
-  const insertion = await proposeStructure(context, result.smiles);
+  const insertion = await insertStructure(context, result.smiles);
   return { kind: "converted", name, smiles: result.smiles, engine: result.engine, insertion };
 }
 
 /**
- * Turn the SMILES into a document object and propose it.
+ * Turn the SMILES into a document object and insert it through the command-scoped host API.
  *
  * Two host calls, and the plugin does neither job itself. `structureFromSmiles` does the 2D layout —
- * a plugin inventing coordinates would produce unusable geometry — and `proposePatch` puts the result
- * in the review queue rather than the document. That review step is not ceremony: OPSIN parses the
- * name as written, so a name meaning something other than the user intended converts *successfully*,
- * and the queue is what stands between that and a wrong structure landing silently.
+ * a plugin inventing coordinates would produce unusable geometry — and `applyPatch` commits it through
+ * the host's document/history path as one undoable command action.
  *
  * Every failure here degrades to `not-drawn` rather than failing the conversion, because the name did
  * convert and the SMILES is worth showing even when nothing can be drawn from it.
  */
-async function proposeStructure(
+async function insertStructure(
   context: PluginCommandContext,
   smiles: string
 ): Promise<Extract<NameConversionOutcome, { kind: "converted" }>["insertion"]> {
@@ -73,7 +71,12 @@ async function proposeStructure(
     };
   }
 
-  const built = await build({ smiles, origin: "Name to Structure (OPSIN)" });
+  let built: Awaited<ReturnType<NonNullable<typeof build>>>;
+  try {
+    built = await build({ smiles, origin: "Name to Structure (OPSIN)" });
+  } catch (error) {
+    return { kind: "not-drawn", reason: `ChemDraft could not lay out the structure: ${errorMessage(error)}` };
+  }
   if (!built.available) {
     return { kind: "not-drawn", reason: built.reason };
   }
@@ -81,18 +84,37 @@ async function proposeStructure(
     return { kind: "not-drawn", reason: built.reason };
   }
 
-  const document = await context.documents.getActiveDocument();
+  let document;
+  try {
+    document = await context.documents.getActiveDocument();
+  } catch (error) {
+    return { kind: "not-drawn", reason: `ChemDraft could not prepare the insertion: ${errorMessage(error)}` };
+  }
   const pageId = document?.pages[0]?.id;
   if (!pageId) {
     return { kind: "not-drawn", reason: "There is no open page to add the structure to." };
   }
 
-  const receipt = await context.documents.proposePatch({
-    patch: { op: "addObject", pageId, object: built.object },
-    reason: `Insert the structure for "${smiles}"`,
-    // The user should see this before it lands, not after. OPSIN parses the name as written and cannot
-    // know what was meant, so approval is the step that catches a name that parsed to the wrong thing.
-    requiresUserApproval: true
-  });
-  return { kind: "proposed", patchId: receipt.id };
+  const applyPatch = context.documents.applyPatch;
+  if (!applyPatch) {
+    return {
+      kind: "not-drawn",
+      reason:
+        "This ChemDraft build needs plugin API 0.1.4 or later with the document.write permission to insert the structure."
+    };
+  }
+
+  try {
+    const receipt = await applyPatch({
+      patch: { op: "addObject", pageId, object: built.object },
+      reason: `Insert the structure for "${smiles}"`
+    });
+    return { kind: "applied", objectIds: receipt.objectIds };
+  } catch (error) {
+    return { kind: "not-drawn", reason: `ChemDraft could not insert the structure: ${errorMessage(error)}` };
+  }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "an unknown error occurred";
 }
