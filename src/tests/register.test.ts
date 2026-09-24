@@ -55,9 +55,9 @@ describe("the command, through the real host", () => {
     const [, panelId, report] = showPanelReport.mock.calls[0]!;
     expect(panelId).toBe(opsinPanelId);
     expect(JSON.stringify(report)).toContain("C1=CC=CC=C1");
-    // The disclosure ships with the answer: OPSIN parses the name as written and cannot know what
-    // the user meant, so a wrong-but-parseable name succeeds silently.
-    expect(JSON.stringify(report)).toContain("does not know what compound you meant");
+    expect(JSON.stringify(report)).toContain(
+      "OPSIN reads the name exactly as written. Check the structure before accepting."
+    );
   });
 
   it("opens no panel at all when the user cancels the prompt", async () => {

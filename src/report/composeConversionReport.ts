@@ -35,12 +35,8 @@ export function composeConversionReport(outcome: NameConversionOutcome): PluginP
           },
           {
             kind: "text",
-            title: "Check it before you accept it",
-            body:
-              "OPSIN is a deterministic parser of systematic nomenclature: it applies the rules to the " +
-              "name as written. It does not know what compound you meant, so a name that parses to a " +
-              "different structure than you intended parses silently and successfully. The review step " +
-              "is what stands between that and a wrong structure in your document."
+            title: "Check before accepting",
+            body: "OPSIN reads the name exactly as written. Check the structure before accepting."
           },
           // Only when there is something to explain. A conversion that drew fine needs no paragraph
           // about drawing.
