@@ -21,8 +21,11 @@ jobs:
       - run: npm test
       - run: npm run lint
       - run: npm run package
-      - run: sha256sum --check dist/plugin-packages/opsin-name-to-structure-*.zip.sha256
-      - run: unzip -t dist/plugin-packages/opsin-name-to-structure-*.zip
+      # The .sha256 sidecar names the zip by its bare filename, so check from beside it.
+      - run: sha256sum --check opsin-name-to-structure-*.zip.sha256
+        working-directory: dist/plugin-packages
+      - run: unzip -t opsin-name-to-structure-*.zip
+        working-directory: dist/plugin-packages
       - uses: actions/upload-artifact@v4
         with:
           name: opsin-name-to-structure-package
