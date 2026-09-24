@@ -14,10 +14,10 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@chemdraft/plugin-api": "file:./vendor/chemdraft-plugin-api-0.1.3.tgz"
+    "@chemdraft/plugin-api": "file:./vendor/chemdraft-plugin-api-0.1.4.tgz"
   },
   "devDependencies": {
-    "@chemdraft/plugin-host": "file:./vendor/chemdraft-plugin-host-0.1.3.tgz",
+    "@chemdraft/plugin-host": "file:./vendor/chemdraft-plugin-host-0.1.4.tgz",
     "@types/node": "^26.1.2",
     "tsx": "^4.23.1",
     "typescript": "^5.8.3",
